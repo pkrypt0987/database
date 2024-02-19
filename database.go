@@ -41,6 +41,10 @@ func Open(driverName, dataSourceName string) (*DB, error) {
 	return &DB{db: db}, nil
 }
 
+func (db *DB) Close() error {
+	return db.db.Close()
+}
+
 func (db *DB) Exec(ctx context.Context, query string, args ...interface{}) (int64, error) {
 	res, err := db.exec(ctx, query, args...)
 	if err != nil {
