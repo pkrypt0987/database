@@ -60,3 +60,10 @@ func (db *DB) Query(ctx context.Context, query string, args ...interface{}) (*sq
 	}
 	return db.db.QueryContext(ctx, query, args...)
 }
+
+func (db *DB) QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	if db.tx != nil {
+		return db.tx.QueryRowContext(ctx, query, args...)
+	}
+	return db.db.QueryRowContext(ctx, query, args...)
+}
