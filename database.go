@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgconn"
+	_ "github.com/jackc/pgx/v4/stdlib"
 	"github.com/lib/pq"
 )
 
