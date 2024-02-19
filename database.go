@@ -6,7 +6,14 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
+	"log"
+	"strings"
 	"time"
+
+	"github.com/jackc/pgconn"
+	"github.com/lib/pq"
 )
 
 type DB struct {
@@ -66,4 +73,88 @@ func (db *DB) QueryRow(ctx context.Context, query string, args ...interface{}) *
 		return db.tx.QueryRowContext(ctx, query, args...)
 	}
 	return db.db.QueryRowContext(ctx, query, args...)
+}
+
+func (db *DB) Transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) error {
+	if canRetry(opts.Isolation) {
+		return db.transactionWithRetry(ctx, opts, f)
+	}
+	return db.transaction(ctx, opts, f)
+}
+
+func canRetry(iso sql.IsolationLevel) bool {
+	return iso == sql.LevelRepeatableRead || iso == sql.LevelSerializable
+}
+
+func (db *DB) transactionWithRetry(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) error {
+	const maxRetries = 3
+	dur := 150 * time.Millisecond
+	for i := 0; i < maxRetries; i++ {
+		err := db.transaction(ctx, opts, f)
+		if isSerializationFailure(err) {
+			time.Sleep(dur)
+			dur *= 2
+			continue
+		}
+		if err != nil {
+			if strings.Contains(err.Error(), serializationFailureCode) {
+				return fmt.Errorf("serialization failure")
+			}
+		}
+		return err
+	}
+	return fmt.Errorf("exceeded max retries")
+}
+
+const serializationFailureCode = "40001"
+
+func isSerializationFailure(err error) bool {
+	var perr *pq.Error
+	if errors.As(err, &perr) && perr.Code == serializationFailureCode {
+		return true
+	}
+	var gerr *pgconn.PgError
+	if errors.As(err, &gerr) && gerr.Code == serializationFailureCode {
+		return true
+	}
+	return false
+}
+
+func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) error {
+	if db.tx != nil {
+		return fmt.Errorf("There is already a transaction in progress")
+	}
+
+	conn, err := db.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("db.Conn(): %w", err)
+	}
+	defer conn.Close()
+
+	tx, err := db.db.BeginTx(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("db.BeginTx(): %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err := tx.Commit(); err != nil {
+				log.Printf("tx.Commit(): %v", err)
+			}
+		}
+	}()
+
+	dbtx := &DB{db: db.db}
+	dbtx.tx = tx
+	dbtx.conn = conn
+	dbtx.txOptions = *opts
+	if err := f(dbtx); err != nil {
+		return fmt.Errorf("call f(): %w", err)
+	}
+	return nil
 }
