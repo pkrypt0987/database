@@ -53,3 +53,10 @@ func (db *DB) exec(ctx context.Context, query string, args ...interface{}) (sql.
 	}
 	return db.db.ExecContext(ctx, query, args...)
 }
+
+func (db *DB) Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	if db.tx != nil {
+		return db.tx.QueryContext(ctx, query, args...)
+	}
+	return db.db.QueryContext(ctx, query, args...)
+}
