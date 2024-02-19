@@ -33,3 +33,23 @@ func Open(driverName, dataSourceName string) (*DB, error) {
 	db.SetConnMaxLifetime(5 * time.Minute)
 	return &DB{db: db}, nil
 }
+
+func (db *DB) Exec(ctx context.Context, query string, args ...interface{}) (int64, error) {
+	res, err := db.exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (db *DB) exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	if db.tx != nil {
+		return db.tx.ExecContext(ctx, query, args...)
+	}
+	return db.db.ExecContext(ctx, query, args...)
+}
