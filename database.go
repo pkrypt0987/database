@@ -80,8 +80,9 @@ func (db *DB) QueryRow(ctx context.Context, query string, args ...interface{}) *
 	return db.db.QueryRowContext(ctx, query, args...)
 }
 
-func (db *DB) Transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) error {
-	if canRetry(opts.Isolation) {
+func (db *DB) Transaction(ctx context.Context, iso sql.IsolationLevel, f func(*DB) error) error {
+	opts := &sql.TxOptions{Isolation: iso}
+	if canRetry(iso) {
 		return db.transactionWithRetry(ctx, opts, f)
 	}
 	return db.transaction(ctx, opts, f)
