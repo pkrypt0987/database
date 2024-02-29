@@ -51,7 +51,6 @@ func (db *DB) Exec(ctx context.Context, query string, args ...interface{}) (int6
 	if err != nil {
 		return 0, err
 	}
-
 	n, err := res.RowsAffected()
 	if err != nil {
 		return 0, err
@@ -141,7 +140,6 @@ func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) 
 	if err != nil {
 		return fmt.Errorf("conn.BeginTx(): %w", err)
 	}
-
 	defer func() {
 		if p := recover(); p != nil {
 			tx.Rollback()
