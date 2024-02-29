@@ -137,9 +137,9 @@ func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) 
 	}
 	defer conn.Close()
 
-	tx, err := db.db.BeginTx(ctx, opts)
+	tx, err := conn.BeginTx(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("db.BeginTx(): %w", err)
+		return fmt.Errorf("conn.BeginTx(): %w", err)
 	}
 
 	defer func() {
