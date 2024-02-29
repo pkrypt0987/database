@@ -104,12 +104,12 @@ func (db *DB) transactionWithRetry(ctx context.Context, opts *sql.TxOptions, f f
 		}
 		if err != nil {
 			if strings.Contains(err.Error(), serializationFailureCode) {
-				return fmt.Errorf("serialization failure")
+				return fmt.Errorf("serialization failure: %w", err)
 			}
 		}
 		return err
 	}
-	return fmt.Errorf("exceeded max retries")
+	return fmt.Errorf("transaction failed after %d retries", maxRetries)
 }
 
 const serializationFailureCode = "40001"
