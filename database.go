@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -82,16 +81,22 @@ func (db *DB) QueryRow(ctx context.Context, query string, args ...interface{}) *
 func (db *DB) Transaction(ctx context.Context, iso sql.IsolationLevel, f func(*DB) error) error {
 	opts := &sql.TxOptions{Isolation: iso}
 	if canRetry(iso) {
-		return db.transactionWithRetry(ctx, opts, f)
+		if err := db.transactionRetry(ctx, opts, f); err != nil {
+			return fmt.Errorf("Transaction(%s): %w", iso, err)
+		}
 	}
-	return db.transaction(ctx, opts, f)
+	if err := db.transaction(ctx, opts, f); err != nil {
+		return fmt.Errorf("Transaction(%s): %w", iso, err)
+	}
+	return nil
 }
 
 func canRetry(iso sql.IsolationLevel) bool {
 	return iso == sql.LevelRepeatableRead || iso == sql.LevelSerializable
 }
 
-func (db *DB) transactionWithRetry(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) error {
+// transactionRetry runs a transaction with the given isolation level and retries it if a serialization failure occurs.
+func (db *DB) transactionRetry(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) error {
 	const maxRetries = 3
 	dur := 150 * time.Millisecond
 	for i := 0; i < maxRetries; i++ {
@@ -111,8 +116,11 @@ func (db *DB) transactionWithRetry(ctx context.Context, opts *sql.TxOptions, f f
 	return fmt.Errorf("transaction failed after %d retries", maxRetries)
 }
 
+// serializationFailureCode is the SQLSTATE code for serialization failure.
 const serializationFailureCode = "40001"
 
+// isSerializationFailure returns true if the error is a serialization failure.
+// It works with both pq.Error and pgconn.PgError.
 func isSerializationFailure(err error) bool {
 	var perr *pq.Error
 	if errors.As(err, &perr) && perr.Code == serializationFailureCode {
@@ -125,14 +133,14 @@ func isSerializationFailure(err error) bool {
 	return false
 }
 
-func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) error {
+func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) (err error) {
 	if db.tx != nil {
 		return fmt.Errorf("There is already a transaction in progress")
 	}
 
 	conn, err := db.db.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("db.Conn(): %w", err)
+		return err
 	}
 	defer conn.Close()
 
@@ -147,8 +155,9 @@ func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) 
 		} else if err != nil {
 			tx.Rollback()
 		} else {
-			if err := tx.Commit(); err != nil {
-				log.Printf("tx.Commit(): %v", err)
+			if txErr := tx.Commit(); txErr != nil {
+				fmt.Println("tx.Commit(): ", txErr)
+				err = fmt.Errorf("tx.Commit(): %w", err)
 			}
 		}
 	}()
@@ -158,7 +167,7 @@ func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) 
 	dbtx.conn = conn
 	dbtx.txOptions = *opts
 	if err := f(dbtx); err != nil {
-		return fmt.Errorf("call f(): %w", err)
+		return fmt.Errorf("call f(tx): %w", err)
 	}
 	return nil
 }
