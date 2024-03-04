@@ -35,8 +35,8 @@ func Open(driverName, dataSourceName string) (*DB, error) {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(50)
-	db.SetMaxIdleConns(50)
+	db.SetMaxOpenConns(30)
+	db.SetMaxIdleConns(30)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	return &DB{db: db}, nil
 }
