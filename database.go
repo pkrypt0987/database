@@ -84,6 +84,7 @@ func (db *DB) Transaction(ctx context.Context, iso sql.IsolationLevel, f func(*D
 		if err := db.transactionRetry(ctx, opts, f); err != nil {
 			return fmt.Errorf("Transaction(%s): %w", iso, err)
 		}
+		return nil
 	}
 	if err := db.transaction(ctx, opts, f); err != nil {
 		return fmt.Errorf("Transaction(%s): %w", iso, err)
@@ -135,7 +136,7 @@ func isSerializationFailure(err error) bool {
 
 func (db *DB) transaction(ctx context.Context, opts *sql.TxOptions, f func(*DB) error) (err error) {
 	if db.tx != nil {
-		return fmt.Errorf("There is already a transaction in progress")
+		return fmt.Errorf("there is already a transaction in progress")
 	}
 
 	conn, err := db.db.Conn(ctx)
